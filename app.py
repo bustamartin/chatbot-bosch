@@ -13,12 +13,12 @@ if "openai_model" not in st.session_state:
 
 # Pro standardní OpenAI klienta musíme URL poskládat ručně včetně verze API
 deployment_name = st.session_state["openai_model"]
-endpoint = f"https://budwise-brigadnici-resource.openai.azure.com/openai/deployments/{deployment_name}"
+endpoint = "https://budwise-brigadnici-resource.openai.azure.com/openai/v1"
 api_version = "2024-02-15-preview"
 
 # Inicializace klienta pomocí base_url
 client = OpenAI(
-    base_url=f"{endpoint}?api-version={api_version}",
+    base_url=endpoint,
     api_key=os.getenv("AZURE_OPENAI_API_KEY")
 )
 
@@ -36,7 +36,7 @@ if prompt := st.chat_input("What is up?"):
 
     with st.chat_message("assistant"):
         stream = client.chat.completions.create(
-            model=st.session_state["openai_model"],  # Azure toto v těle požadavku sice ignoruje (bere to z URL), ale parametr je pro knihovnu povinný
+            model=deployment_name,  # Azure toto v těle požadavku sice ignoruje (bere to z URL), ale parametr je pro knihovnu povinný
             messages=[
                 {"role": m["role"], "content": m["content"]}
                 for m in st.session_state.messages
