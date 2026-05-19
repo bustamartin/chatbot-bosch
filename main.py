@@ -20,10 +20,14 @@ client = OpenAI(
 
 st.title("Bosch bot")
 
-user_input = st.text_input("Zadej otázku pro Bosch bota")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+user_input = st.text_input("Zadej otázku pro Bosch bota:")
 
 if user_input:
-    st.write("Vaše otázka:", user_input)
+    st.session_state.messages.append(
+        f"Vaše otázka: {user_input}")
     completion = client.chat.completions.create(
         model=deployment_name,
         messages=[
@@ -34,17 +38,8 @@ if user_input:
         ],
     )
     response = completion.choices[0].message.content
-    st.write("Bosch bot:", response)
+    st.session_state.messages.append(
+        f"Bosch bot: {response}")
 
-
-# completion = client.chat.completions.create(
-#    model=deployment_name,
-#     messages=[
-#         {
-#             "role": "user",
-#             "content": "Jaký je dneska datum?",
-#         }
-#     ],
-# )
-#
-# print(completion.choices[0].message.content)
+for message in st.session_state.messages:
+    st.write(message)
