@@ -1,16 +1,22 @@
-# This is a sample Python script.
+from openai import OpenAI
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+endpoint = "https://budwise-brigadnici-resource.openai.azure.com/openai/v1"
+deployment_name = "gpt-5"
+api_key = "<your-api-key>"
 
+client = OpenAI(
+    base_url=endpoint,
+    api_key=api_key
+)
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
+completion = client.chat.completions.create(
+    model=deployment_name,
+    messages=[
+        {
+            "role": "user",
+            "content": "What is the capital of France?",
+        }
+    ],
+)
 
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+print(completion.choices[0].message) 
