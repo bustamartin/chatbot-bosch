@@ -5,7 +5,16 @@ from openai import OpenAI  # <-- Zůstává standardní OpenAI klient
 
 load_dotenv()
 
-st.title("ChatGPT-like clone")
+st.title("Bosch Bot")
+
+# jak bude mluvit (Tento blok ti teď v paměti zůstane)
+if "messages" not in st.session_state:
+    st.session_state.messages = [
+        {
+            "role": "system",
+            "content": "Jsi Bosch bot, průvodce pro RBCB. Mluv jako drsný kapitán, používej pirátský slang, ale zároveň uživateli užitečně odpověz na to co potřebuje."
+        }
+    ]
 
 # Nastavení názvu vašeho modelu/deploymentu v Azure
 if "openai_model" not in st.session_state:
@@ -22,12 +31,13 @@ client = OpenAI(
     api_key=os.getenv("AZURE_OPENAI_API_KEY")
 )
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+# (Duplicitní mazací blok byl odsud odstraněn)
 
+# Vykreslení historie chatu (přeskakujeme systémovou zprávu)
 for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+    if message["role"] != "system":
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
 if prompt := st.chat_input("What is up?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
