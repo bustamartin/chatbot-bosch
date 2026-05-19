@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -15,6 +16,10 @@ client = OpenAI(
     base_url=endpoint,
     api_key=api_key,
 )
+
+df = pd.read_csv("logs/security_logs.csv")
+failed_logins = df[df["event"] == "failed_login"]
+failed_by_ip = failed_logins["ip"].value_counts()
 
 # ___________________
 
@@ -40,6 +45,10 @@ if user_input:
     response = completion.choices[0].message.content
     st.session_state.messages.append(
         f"Bosch bot: {response}")
+
+st.subheader("Suspicious IPs")
+
+st.write(failed_by_ip)
 
 for message in st.session_state.messages:
     st.write(message)
