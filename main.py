@@ -19,53 +19,93 @@ API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
 client = OpenAI(base_url=ENDPOINT, api_key=API_KEY)
 
 
-# 3. Pomocná funkce: Parsování G-codu a výpočet statistik
+# 3. Pomocná funkce: Parsování G-codu, výpočet času a bezpečnostní audit
 def parse_gcode_to_dataframe(file_content):
     lines = file_content.decode("utf-8", errors="ignore").splitlines()
 
     x_coords = []
     y_coords = []
+    line_numbers = []
+
     current_x, current_y = 0.0, 0.0
-    current_feedrate = 1200.0  # Výchozí rychlost (mm/min)
+    current_feedrate = 1200.0
     total_time_minutes = 0.0
 
-    # Regulární výrazy pro vytažení X, Y a rychlosti F
+    # Seznam pro ukládání bezpečnostních varování (rizikových pohybů)
+    warnings = []
+
     x_pattern = re.compile(r'X\s*(-?\d+\.?\d*)', re.IGNORECASE)
     y_pattern = re.compile(r'Y\s*(-?\d+\.?\d*)', re.IGNORECASE)
     f_pattern = re.compile(r'F\s*(\d+\.?\d*)', re.IGNORECASE)
 
-    for line in lines:
-        clean_line = line.split(';')[0]  # Ignorujeme komentáře
+    for idx, line in enumerate(lines):
+        line_num = idx + 1
+        clean_line = line.split(';')[0]
 
         if "G0" in clean_line.upper() or "G1" in clean_line.upper():
             match_x = x_pattern.search(clean_line)
             match_y = y_pattern.search(clean_line)
             match_f = f_pattern.search(clean_line)
 
-            # Pokud řádek mění rychlost posuvu
+            # --- RIZIKO 1: Kontrola extrémní rychlosti (Feedrate) ---
             if match_f:
                 current_feedrate = float(match_f.group(1))
+                if current_feedrate > 6000:
+                    warnings.append(
+                        f"Line {line_num}: ⚠️ Extrémně vysoká rychlost posuvu (F={current_feedrate} mm/min). Hrozí zlomení nástroje!")
                 if current_feedrate <= 0:
                     current_feedrate = 1200.0
 
-            # Zaneseme bod, pokud se mění X nebo Y koordinát
             if match_x or match_y:
                 next_x = float(match_x.group(1)) if match_x else current_x
                 next_y = float(match_y.group(1)) if match_y else current_y
 
-                # Výpočet vzdálenosti (v mm) mezi starým a novým bodem
                 distance = math.sqrt((next_x - current_x) ** 2 + (next_y - current_y) ** 2)
+
+                # --- RIZIKO 2: Kontrola nebezpečných rychlých přejezdů G0 ---
+                if "G0" in clean_line.upper() and distance > 100:
+                    warnings.append(
+                        f"Line {line_num}: 🚧 Dlouhý rychlý přejezd (G0) o délce {distance:.1f} mm. Prověř, zda nehrozí kolize s upínkami.")
+
                 if distance > 0:
                     total_time_minutes += distance / current_feedrate
 
-                # Aktualizace pozice
                 current_x = next_x
                 current_y = next_y
+
                 x_coords.append(current_x)
                 y_coords.append(current_y)
+                line_numbers.append(line_num)
 
-    df = pd.DataFrame({'X': x_coords, 'Y': y_coords})
-    return df, lines, total_time_minutes
+    # --- RIZIKO 3: Ostré změny směru (úhly) ---
+    for i in range(1, len(x_coords) - 1):
+        x1, y1 = x_coords[i - 1], y_coords[i - 1]
+        x2, y2 = x_coords[i], y_coords[i]
+        x3, y3 = x_coords[i + 1], y_coords[i + 1]
+
+        v1 = (x2 - x1, y2 - y1)
+        v2 = (x3 - x2, y3 - y2)
+
+        len_v1 = math.sqrt(v1[0] ** 2 + v1[1] ** 2)
+        len_v2 = math.sqrt(v2[0] ** 2 + v2[1] ** 2)
+
+        if len_v1 > 0 and len_v2 > 0:
+            dot_product = v1[0] * v2[0] + v1[1] * v2[1]
+            cos_angle = max(-1.0, min(1.0, dot_product / (len_v1 * len_v2)))
+            angle_rad = math.acos(cos_angle)
+            angle_deg = math.degrees(angle_rad)
+
+            if angle_deg > 135:
+                warnings.append(
+                    f"Line {line_numbers[i]}: 📉 Velmi ostrá změna směru ({angle_deg:.1f}°). Může způsobit vibrace nebo poškodit povrch.")
+
+    df = pd.DataFrame({
+        'Krok': range(1, len(x_coords) + 1),
+        'X': x_coords,
+        'Y': y_coords,
+        'Řádek v G-code': line_numbers
+    })
+    return df, lines, total_time_minutes, warnings
 
 
 # 4. UI Rozhraní ve Streamlitu
@@ -75,19 +115,19 @@ if uploaded_file is not None:
     file_bytes = uploaded_file.read()
 
     # Zpracování souboru
-    df, raw_lines, odhadovany_cas_minuty = parse_gcode_to_dataframe(file_bytes)
+    df, raw_lines, odhadovany_cas_minuty, bezpecnostni_varovani = parse_gcode_to_dataframe(file_bytes)
 
     if not df.empty:
         col1, col2 = st.columns([3, 2])
 
         with col1:
-            st.subheader("📊 Statistiky a vizualizace drah")
+            st.subheader("📊 Statistiky drah")
             pocet_pohybu = len(df)
             min_x, max_x = df['X'].min(), df['X'].max()
             min_y, max_y = df['Y'].min(), df['Y'].max()
             sirka, vyska = max_x - min_x, max_y - min_y
 
-            # Formátování času na minuty a sekundy (nebo hodiny)
+            # Formátování času
             if odhadovany_cas_minuty < 1:
                 cas_vypis = f"{int(odhadovany_cas_minuty * 60)} s"
             elif odhadovany_cas_minuty > 60:
@@ -95,7 +135,7 @@ if uploaded_file is not None:
             else:
                 cas_vypis = f"{int(odhadovany_cas_minuty)}m {int((odhadovany_cas_minuty % 1) * 60)}s"
 
-            # Zobrazení statistik
+            # Zobrazení základních statistik
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Počet pohybů", f"{pocet_pohybu} x")
             m2.metric("Šířka (X)", f"{sirka:.1f} mm")
@@ -107,15 +147,11 @@ if uploaded_file is not None:
             else:
                 st.success("✅ Rozměry jsou v pořádku pro standardní stroje.")
 
-            st.caption("Trajektorie pohybu nástroje (X/Y):")
-            st.line_chart(df, x="X", y="Y")
-
             # Přehledná tabulka se souřadnicemi
             st.subheader("📋 Tabulka souřadnic (Pandas DataFrame)")
             st.dataframe(df, use_container_width=True)
 
         with col2:
-            # Přejmenováno na AI popis podle zadání
             st.subheader("🤖 AI popis")
 
             # Příprava zkráceného vzorku pro AI
@@ -124,13 +160,13 @@ if uploaded_file is not None:
             else:
                 vzorek_kodu = "\n".join(raw_lines)
 
-            # Upravený profesionální prompt bez jakéhokoliv vlastního jména
             prompt = (
                 "Jsi odborný asistent a expert na CNC frézování a 3D tisk. "
-                "Tvým úkolem je analyzovat poskytnutý vzorek G-codu. "
-                "STRIKTNÍ PRAVIDLO: Neříkej, co kód NENÍ (např. 'Tento kód neobsahuje frézování'). "
-                "Hned v první větě přímo věcně pojmenuj technologii, o kterou se jedná (např. 'Jedná se o 3D tisk objektu...' nebo 'Tento program provádí frézování kapsy...'). "
-                "Následně lidskou řečí a česky stručně vysvětli, co přesně stroj v tomto výseku dělá a jaké příkazy používá.\n\n"
+                "Tvým úkolem je analyzovat poskytnutý vzorek G-codu.\n\n"
+                "STRIKTNÍ PRAVIDLO: Neříkej, co kód NENÍ.\n"
+                "1. Hned v první větě přímo věcně pojmenuj technologii, o kterou se jedná.\n"
+                "2. Popiš, jak bude hotový produkt podle těchto drah přibližně vypadat (tvar, geometrie).\n"
+                "3. Stručně vysvětli, co přesně stroj v tomto výseku dělá a jaké příkazy používá.\n\n"
                 f"G-CODE VZOREK:\n{vzorek_kodu}"
             )
 
@@ -143,5 +179,18 @@ if uploaded_file is not None:
                     st.info(completion.choices[0].message.content)
                 except Exception as e:
                     st.error(f"Chyba při volání AI: {e}")
+
+            # --- SEKCE: RIZIKOVÉ POHYBY (BEZPEČNOSTNÍ AUDIT) ---
+            st.subheader("⚠️ Rizikové pohyby")
+            if bezpecnostni_varovani:
+                st.warning(f"V kódu bylo nalezeno {len(bezpecnostni_varovani)} potenciálních rizik:")
+                for varovani in bezpecnostni_varovani[:10]:
+                    st.write(varovani)
+                if len(bezpecnostni_varovani) > 10:
+                    st.info(f"...a dalších {len(bezpecnostni_varovani) - 10} varování.")
+            else:
+                st.success(
+                    "🚀 Žádné kritické nebo nebezpečné trajektorie nebyly matematickou analýzou detekovány. Kód vypadá stabilně.")
+
     else:
         st.warning("V souboru nebyly nalezeny žádné platné pohyby G0/G1.")
