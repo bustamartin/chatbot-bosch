@@ -1,5 +1,21 @@
 import streamlit as st
 import pandas as pd
+import os
+from dotenv import load_dotenv
+from openai import OpenAI
+import sqlite3
+
+load_dotenv()
+
+endpoint = "https://budwise-brigadnici-resource.openai.azure.com/openai/v1"
+deployment_name = "gpt-5"
+api_key = os.getenv("AZURE_OPENAI_API_KEY")
+
+client = OpenAI(
+    base_url=endpoint,
+    api_key=api_key,
+    timeout=30.0,
+)
 
 st.set_page_config(
     page_title="Logy",
@@ -9,8 +25,11 @@ st.set_page_config(
 
 st.title("Logy (přísně tajné hehe)")
 
-
 df = pd.read_csv("logs/security_logs.csv")
+
+conn = sqlite3.connect("security_logs.db")
+df.to_sql("logs", conn, if_exists="replace", index=False)
+conn.close()
 
 failed_logins = df[df["event"] == "failed_login"]
 failed_by_ip = failed_logins["ip"].value_counts()
@@ -37,3 +56,92 @@ st.write(suspicious_urls)
 
 st.subheader("4. Scanování portů")
 st.write(suspicious_port_scans)
+
+report = f"""
+Security report:
+
+1. Více failed loginů:
+{suspicious_failed_logins.to_string()}
+
+2. Mnoho requestů z jedné IP:
+{suspicious_many_requests.to_string()}
+
+3. Podezřelé URL:
+{suspicious_urls.to_string(index=False)}
+
+4. Scanování portů:
+{suspicious_port_scans.to_string()}
+"""
+html_report = f"""
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Security report</title>
+</head>
+<body>
+    <h1>Security report</h1>
+
+    <h2>1. Více failed loginů</h2>
+    <pre>{suspicious_failed_logins.to_string()}</pre>
+
+    <h2>2. Mnoho requestů z jedné IP</h2>
+    <pre>{suspicious_many_requests.to_string()}</pre>
+
+    <h2>3. Podezřelé URL</h2>
+    {suspicious_urls.to_html(index=False)}
+
+    <h2>4. Scanování portů</h2>
+    <pre>{suspicious_port_scans.to_string()}</pre>
+</body>
+</html>
+"""
+
+st.download_button(
+    label="Stáhnout report jako HTML",
+    data=html_report,
+    file_name="security_report.html",
+    mime="text/html"
+)
+
+if st.button("Vygenerovat AI security summary"):
+    try:
+        with st.spinner("AI analyzuje report..."):
+            completion = client.chat.completions.create(
+                model=deployment_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Jsi AI Security Analyst. Vysvětluj česky, jednoduše a krátce jako report pro školní projekt."
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Shrň tento security report maximálně v 8 větách. Napiš, co je podezřelé a co zkontrolovat:\n{report}"
+                    }
+                ],
+                max_completion_tokens=1200,
+                reasoning_effort="low",
+            )
+
+            ai_summary = completion.choices[0].message.content
+
+            if ai_summary:
+                st.subheader("AI security summary")
+                st.write(ai_summary)
+            else:
+                st.error("AI vrátila prázdnou odpověď.")
+                st.write(completion)
+
+    except Exception as e:
+        st.error("AI summary se nepovedlo vygenerovat.")
+        st.code(str(e))
+
+st.subheader("Dashboard")
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("Failed login IP", len(suspicious_failed_logins))
+col2.metric("IP s hodně requesty", len(suspicious_many_requests))
+col3.metric("Podezřelé URL", len(suspicious_urls))
+col4.metric("Port scan IP", len(suspicious_port_scans))
+
+st.bar_chart(requests_by_ip)
