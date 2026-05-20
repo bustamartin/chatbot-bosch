@@ -3,6 +3,7 @@ import pandas as pd
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
+import sqlite3
 
 from pages import logs
 
@@ -19,32 +20,39 @@ client = OpenAI(
     api_key=api_key,
 )
 
+# Inicializace sqlite databáze (vytvoří soubor data.db v kořeni projektu)
+def init_db():
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS generated_webs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            firma TEXT,
+            obor TEXT,
+            styl TEXT,
+            slovo1 TEXT,
+            slovo2 TEXT,
+            text_kod TEXT,
+            vytvoreno TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-# ___________________
+init_db()
 
-st.title("Bosch bot")
+# UI Aplikace (streamlit)
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+st.title("🤖 AI Generator Landing Pages")
+st.write("Zadejte parametry a AI vám vytvoří kompletní prodejní stránku na míru.")
 
-user_input = st.text_input("Zadej otázku pro Bosch bota:")
-
-if user_input:
-    st.session_state.messages.append(
-        f"Vaše otázka: {user_input}")
-    completion = client.chat.completions.create(
-        model=deployment_name,
-        messages=[
-            {
-                "role": "user",
-                "content": user_input,
-            }
-        ],
+# Formulář pro uživatele
+with st.form("generator_form"):
+    firma = st.text_input("Název firmy:", placeholder="např. Káva z hor s.r.o.")
+    obor = st.text_input("Obor podnikání:", placeholder="např. Výběrová kávová zrna, pražírna")
+    styl = st.selectbox(
+        "Styl a atmosféra webu:",
+        ["Moderní a čistý (SaaS)", "Luxusní a elegantní", "Technologický a tmavý", "Hravý a barevný"]
     )
-    response = completion.choices[0].message.content
-    st.session_state.messages.append(
-        f"Bosch bot: {response}")
-
-
-for message in st.session_state.messages:
-    st.write(message)
+    
+    submit_button = st.form_submit_button("Vygenerovat web")
