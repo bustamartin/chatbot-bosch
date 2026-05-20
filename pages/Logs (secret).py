@@ -1,6 +1,15 @@
 import streamlit as st
 import pandas as pd
 
+st.set_page_config(
+    page_title="Logy",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.title("Logy (přísně tajné hehe)")
+
+
 df = pd.read_csv("logs/security_logs.csv")
 
 failed_logins = df[df["event"] == "failed_login"]
