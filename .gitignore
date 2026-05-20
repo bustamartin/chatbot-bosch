@@ -1,6 +1,17 @@
-.env
-.venv/
+# Python
 __pycache__/
-.idea/
+*.pyc
+.venv/
+env/
+
+# Databáze
+data.db
+
+# Systémové soubory
+.DS_Store
+Thumbs.db
+.ipynb_checkpoints/
+
+# Ostatní
+.env
 logs/
-*.csv
