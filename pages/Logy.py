@@ -36,21 +36,6 @@ if uploaded_file is not None:
     st.session_state["df"] = df
 
 elif generate_ai_logs:
-    # tady tvoje AI generování
-    df = pd.DataFrame(fake_logs)
-    st.session_state["df"] = df
-
-elif "df" in st.session_state:
-    df = st.session_state["df"]
-
-else:
-    st.info("Nahraj CSV soubor nebo vygeneruj AI testovací logy.")
-    st.stop()
-
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-
-elif generate_ai_logs:
     try:
         with st.spinner("AI generuje scénář logů..."):
             completion = client.chat.completions.create(
@@ -114,6 +99,9 @@ elif generate_ai_logs:
         st.error("Generování AI logů se nepovedlo.")
         st.code(str(e))
         st.stop()
+
+elif "df" in st.session_state:
+    df = st.session_state["df"]
 
 else:
     st.info("Nahraj CSV soubor nebo vygeneruj AI testovací logy.")
