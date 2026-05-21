@@ -26,7 +26,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-st.title("Martin – AI Security & Log Analyzer")
+st.title("Kontrola logů")
 
 uploaded_file = st.file_uploader("Nahraj CSV soubor s logy", type=["csv"])
 generate_ai_logs = st.button("Vygenerovat AI testovací logy")
