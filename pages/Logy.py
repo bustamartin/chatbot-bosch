@@ -63,7 +63,7 @@ elif generate_ai_logs:
                         """
                     }
                 ],
-                max_completion_tokens=1200,
+                max_completion_tokens=2500,
                 reasoning_effort="minimal",
                 timeout=120,
             )
