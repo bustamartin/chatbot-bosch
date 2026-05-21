@@ -145,7 +145,7 @@ if uploaded_file is not None:
         # --- PRAVÝ SLOUPCE: Popis, Rizika a Chat ---
         with col2:
             st.subheader("🤖 AI popis")
-            if "ai_popis" not in st.session_state:
+            if "ai_popis" not in st.session_state or st.session_state["ai_popis"] == "":
                 with st.spinner("Studuji kód..."):
                     prompt = (
                         "Jsi odborný asistent a expert na CNC frézování a 3D tisk. "
@@ -154,20 +154,29 @@ if uploaded_file is not None:
                         "1. Hned v první větě přímo věcně pojmenuj technologii, o kterou se jedná.\n"
                         "2. Popiš, jak bude hotový produkt podle těchto drah přibližně vypadat (tvar, geometrie).\n"
                         "3. Stručně vysvětli, co přesně stroj v tomto výseku dělá a jaké příkazy používá.\n\n"
-                        f"G-CODE VZOREK:\n{vzorek_kodu}"
+                        f"G-CODE VZOREK, a bude to mít maximálně třicet slov:\n{vzorek_kodu}"
                     )
                     try:
                         comp = client.chat.completions.create(
                             model=DEPLOYMENT_NAME,
                             messages=[{"role": "user", "content": prompt}],
-                            timeout=60.0,
-                            max_completion_tokens=1000  # Zvýšeno pro jistotu kompletního popisu
+                            timeout=60.0
+                            # Token limit odstraněn, model odpoví v plném rozsahu
                         )
-                        st.session_state["ai_popis"] = comp.choices[0].message.content
-                    except Exception as e:
-                        st.session_state["ai_popis"] = f"⚠️ Došlo k chybě při komunikaci s AI: {e}"
 
-            st.info(st.session_state["ai_popis"])
+                        if hasattr(comp, 'choices') and len(comp.choices) > 0:
+                            odpoved_text = comp.choices[0].message.content
+                            if odpoved_text:
+                                st.session_state["ai_popis"] = odpoved_text
+                            else:
+                                st.session_state["ai_popis"] = "⚠️ Model vrátil prázdnou odpověď."
+                        else:
+                            st.session_state["ai_popis"] = "⚠️ Nepodařilo se přečíst strukturu odpovědi z Azure."
+
+                    except Exception as e:
+                        st.session_state["ai_popis"] = f"❌ Došlo k chybě při komunikaci s AI: {e}"
+
+            st.info(st.session_state.get("ai_popis", "⚠️ Žádný popis k zobrazení."))
 
             st.subheader("⚠️ Rizikové pohyby")
             if bezpecnostni_varovani:
@@ -181,7 +190,7 @@ if uploaded_file is not None:
 
             # Inicializace zpráv a základního systémového promptu
             if "messages" not in st.session_state:
-                system_prompt = f"Jsi CNC asistent. Vycházej věcně z této analýzy: {st.session_state['ai_popis']}"
+                system_prompt = f"Jsi CNC asistent. Vycházej věcně z této analýzy: {st.session_state.get('ai_popis', '')}"
                 st.session_state.messages = [{"role": "system", "content": system_prompt}]
 
             # Vykreslení historie chatu z session_state
@@ -194,22 +203,19 @@ if uploaded_file is not None:
 
             # Zpracování nového vstupu od uživatele
             if chat_prompt := st.chat_input("Zeptejte se na detaily součástky..."):
-                # 1. Okamžité uložení a zobrazení dotazu uživatele
                 st.session_state.messages.append({"role": "user", "content": chat_prompt})
                 with chat_container:
                     with st.chat_message("user"):
                         st.markdown(chat_prompt)
 
-                    # 2. Generování odpovědi bez streamování, aby nedocházelo k chybám v Azure
                     with st.chat_message("assistant"):
                         with st.spinner("Přemýšlím..."):
                             try:
                                 response_completion = client.chat.completions.create(
                                     model=DEPLOYMENT_NAME,
                                     messages=st.session_state.messages,
-                                    stream=False,  # Vypnuto streamování pro maximální stabilitu v Azure
-                                    max_completion_tokens=2000
-                                    # Navýšený limit pro dlouhé odpovědi (máte k dispozici 5000)
+                                    stream=False  # Vypnuto pro maximální stabilitu v Azure
+                                    # Token limit odstraněn, chat odpoví bez omezení délky
                                 )
                                 response = response_completion.choices[0].message.content
                                 st.markdown(response)
@@ -217,8 +223,7 @@ if uploaded_file is not None:
                                 response = f"⚠️ Nepodařilo se získat odpověď z Azure OpenAI: {e}"
                                 st.error(response)
 
-                # 3. Uložení odpovědi asistenta do historie a následný čistý restart stránky
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.rerun()
-    else:
-        st.warning("V souboru nebyly nalezeny žádné platné pohyby.")
+else:
+    st.warning("V souboru nebyly nalezeny žádné platné pohyby.")
