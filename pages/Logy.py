@@ -33,6 +33,22 @@ generate_ai_logs = st.button("Vygenerovat AI testovací logy")
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
+    st.session_state["df"] = df
+
+elif generate_ai_logs:
+    # tady tvoje AI generování
+    df = pd.DataFrame(fake_logs)
+    st.session_state["df"] = df
+
+elif "df" in st.session_state:
+    df = st.session_state["df"]
+
+else:
+    st.info("Nahraj CSV soubor nebo vygeneruj AI testovací logy.")
+    st.stop()
+
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
 
 elif generate_ai_logs:
     try:
@@ -89,6 +105,7 @@ elif generate_ai_logs:
                     })
 
             df = pd.DataFrame(fake_logs)
+            st.session_state["df"] = df
 
             st.success("AI vygenerovala testovací logy.")
             st.dataframe(df)
