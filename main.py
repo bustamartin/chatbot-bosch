@@ -161,7 +161,6 @@ if uploaded_file is not None:
                             model=DEPLOYMENT_NAME,
                             messages=[{"role": "user", "content": prompt}],
                             timeout=60.0
-                            # Token limit odstraněn, model odpoví v plném rozsahu
                         )
 
                         if hasattr(comp, 'choices') and len(comp.choices) > 0:
@@ -201,8 +200,30 @@ if uploaded_file is not None:
                         with st.chat_message(m["role"]):
                             st.markdown(m["content"])
 
-            # Zpracování nového vstupu od uživatele
-            if chat_prompt := st.chat_input("Zeptejte se na detaily součástky..."):
+            # --- NOVÉ: PŘEDPŘIPRAVENÉ OTÁZKY (FAQ TLAČÍTKA) ---
+            st.write("💡 **Časté dotazy (kliknutím odešlete):**")
+            faq_col1, faq_col2, faq_col3 = st.columns(3)
+            zvolena_otazka = None
+
+            with faq_col1:
+                if st.button("⏱️ Jak zkrátit čas výroby?"):
+                    zvolena_otazka = "Jaké úpravy v tomto G-codu by pomohly zkrátit celkový čas výroby bez ztráty kvality?"
+
+            with faq_col2:
+                if st.button("⚠️ Jsou tam závažné chyby?"):
+                    zvolena_otazka = "Jsou v tomto G-codu nějaká vyloženě kritická místa, kde hrozí kolize nebo zlomení nástroje?"
+
+            with faq_col3:
+                if st.button("📈 Optimalizace posuvů?"):
+                    zvolena_otazka = "Podívej se na rychlosti posuvů (F). Jsou nastavené optimálně pro tento typ dráhy?"
+
+            # Zpracování vstupu od uživatele (z chatu nebo kliknutím na FAQ tlačítko)
+            chat_prompt = st.chat_input("Zeptejte se na detaily součástky...")
+
+            if zvolena_otazka:
+                chat_prompt = zvolena_otazka
+
+            if chat_prompt:
                 st.session_state.messages.append({"role": "user", "content": chat_prompt})
                 with chat_container:
                     with st.chat_message("user"):
@@ -214,8 +235,7 @@ if uploaded_file is not None:
                                 response_completion = client.chat.completions.create(
                                     model=DEPLOYMENT_NAME,
                                     messages=st.session_state.messages,
-                                    stream=False  # Vypnuto pro maximální stabilitu v Azure
-                                    # Token limit odstraněn, chat odpoví bez omezení délky
+                                    stream=False
                                 )
                                 response = response_completion.choices[0].message.content
                                 st.markdown(response)
