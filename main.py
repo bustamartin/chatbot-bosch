@@ -92,7 +92,7 @@ if uploaded_file is not None:
     df, raw_lines, odhadovany_cas_minuty, bezpecnostni_varovani = parse_gcode_to_dataframe(file_bytes)
 
     if not df.empty:
-        # Čistění a příprava ořezaného vzorku kódu (vymazání komentářů a mezer pro úsporu tokenů)
+        # Čistění a příprava ořezaného vzorku kódu
         ciste_radky = [line.strip().split(';')[0] for line in raw_lines if line.strip()]
         ciste_radky = [line for line in ciste_radky if line]
 
@@ -177,10 +177,29 @@ if uploaded_file is not None:
 
             st.info(st.session_state.get("ai_popis", "⚠️ Žádný popis k zobrazení."))
 
+            # --- ÚPRAVA: ROZBALOVACÍ OKNO PRO RIZIKOVÉ POHYBY ---
             st.subheader("⚠️ Rizikové pohyby")
             if bezpecnostni_varovani:
-                st.warning(f"Nalezeno {len(bezpecnostni_varovani)} rizik:")
-                for v in bezpecnostni_varovani[:3]: st.write(v)
+                # Rozbalovací okno s dynamickým počtem chyb v nadpisu
+                with st.expander(f"🔍 Zobrazit podrobný seznam rizik ({len(bezpecnostni_varovani)})", expanded=False):
+                    st.markdown("### 📋 Kompletní přehled nalezených rizik v kódu:")
+
+                    # Rozdělení rizik do přehledných skupin podle textu pro lepší čitelnost
+                    rychlosti = [v for v in bezpecnostni_varovani if "rychlost" in v]
+                    prejezdy = [v for v in bezpecnostni_varovani if "přejezd" in v]
+                    uhly = [v for v in bezpecnostni_varovani if "změna směru" in v]
+
+                    if rychlosti:
+                        st.markdown("**🚀 Problémy s rychlostí posuvu (F):**")
+                        for r in rychlosti: st.write(r)
+
+                    if prejezdy:
+                        st.markdown("**🚧 Rizikové přejezdy (G0):**")
+                        for p in prejezdy: st.write(p)
+
+                    if uhly:
+                        st.markdown("**📉 Ostré změny směru (úhly):**")
+                        for u in uhly: st.write(u)
             else:
                 st.success("🚀 Žádná rizika nebyla detekována.")
 
@@ -200,7 +219,7 @@ if uploaded_file is not None:
                         with st.chat_message(m["role"]):
                             st.markdown(m["content"])
 
-            # --- NOVÉ: PŘEDPŘIPRAVENÉ OTÁZKY (FAQ TLAČÍTKA) ---
+            # --- PŘEDPŘIPRAVENÉ OTÁZKY (FAQ TLAČÍTKA) ---
             st.write("💡 **Časté dotazy (kliknutím odešlete):**")
             faq_col1, faq_col2, faq_col3 = st.columns(3)
             zvolena_otazka = None
@@ -210,14 +229,14 @@ if uploaded_file is not None:
                     zvolena_otazka = "Jaké úpravy v tomto G-codu by pomohly zkrátit celkový čas výroby bez ztráty kvality?"
 
             with faq_col2:
-                if st.button("⚠️ Jsou tam závažné chyby?"):
+                if st.button("⚠️ Detekuješ kritické chyby?"):
                     zvolena_otazka = "Jsou v tomto G-codu nějaká vyloženě kritická místa, kde hrozí kolize nebo zlomení nástroje?"
 
             with faq_col3:
                 if st.button("📈 Optimalizace posuvů?"):
                     zvolena_otazka = "Podívej se na rychlosti posuvů (F). Jsou nastavené optimálně pro tento typ dráhy?"
 
-            # Zpracování vstupu od uživatele (z chatu nebo kliknutím na FAQ tlačítko)
+            # Zpracování vstupu od uživatele
             chat_prompt = st.chat_input("Zeptejte se na detaily součástky...")
 
             if zvolena_otazka:
@@ -243,7 +262,7 @@ if uploaded_file is not None:
                                 response = f"⚠️ Nepodařilo se získat odpověď z Azure OpenAI: {e}"
                                 st.error(response)
 
-                st.session_state.messages.append({"role": "assistant", "content": response})
-                st.rerun()
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                    st.rerun()
 else:
     st.warning("V souboru nebyly nalezeny žádné platné pohyby.")
