@@ -59,8 +59,8 @@ def parse_gcode_to_dataframe(file_content):
                     warnings.append(f"Line {line_num}: 🚧 Dlouhý rychlý přejezd (G0).")
                 if distance > 0: total_time_minutes += distance / current_feedrate
                 current_x, current_y = next_x, next_y
-                x_coords.append(current_x);
-                y_coords.append(current_y);
+                x_coords.append(current_x)
+                y_coords.append(current_y)
                 line_numbers.append(line_num)
 
     # Analýza ostrých úhlů
@@ -105,7 +105,7 @@ if uploaded_file is not None:
 
         # --- LEVÝ SLOUPCE: Statistiky, Tabulka a OBRÁZEK ---
         with col1:
-            # Rámeček pro statistiky drah
+            # RÁMEČEK: Statistiky drah
             with st.container(border=True):
                 st.subheader("📊 Statistiky drah")
                 sirka, vyska = df['X'].max() - df['X'].min(), df['Y'].max() - df['Y'].min()
@@ -117,16 +117,16 @@ if uploaded_file is not None:
                 m4.metric("Odhadovaný čas",
                           f"{int(odhadovany_cas_minuty)}m" if odhadovany_cas_minuty > 1 else f"{int(odhadovany_cas_minuty * 60)}s")
 
-            st.write("")  # drobná mezera pro vzhled
+            st.write("")
 
-            # Rámeček pro tabulku souřadnic
+            # RÁMEČEK: Tabulka souřadnic
             with st.container(border=True):
                 st.subheader("📋 Tabulka souřadnic")
                 st.dataframe(df, use_container_width=True, height=300)
 
             st.write("")
 
-            # Rámeček pro AI vizualizaci
+            # RÁMEČEK: Vizualizace drah
             with st.container(border=True):
                 st.subheader("🖼️ AI Vizualizace drah")
                 if "generated_img_base64" not in st.session_state:
@@ -153,7 +153,7 @@ if uploaded_file is not None:
 
         # --- PRAVÝ SLOUPCE: Popis, Rizika a Chat ---
         with col2:
-            # Rámeček pro AI popis a Rizika společně
+            # RÁMEČEK: AI Popis + Rozbalovací Rizika
             with st.container(border=True):
                 st.subheader("🤖 AI popis")
                 if "ai_popis" not in st.session_state or st.session_state["ai_popis"] == "":
@@ -188,44 +188,41 @@ if uploaded_file is not None:
 
                 st.info(st.session_state.get("ai_popis", "⚠️ Žádný popis k zobrazení."))
 
-                # Vylepšené rozbalovací okno pro rizika uvnitř horního panelu
                 st.write("")
                 st.markdown("**⚠️ Detekovaná bezpečnostní rizika:**")
+
+                # ROZBALOVACÍ OKÝNKO s logickým tříděním rizik
                 if bezpecnostni_varovani:
                     with st.expander(f"🔍 Zobrazit podrobný seznam rizik ({len(bezpecnostni_varovani)})",
                                      expanded=False):
-                        st.markdown("### 📋 Kompletní přehled nalezených rizik v kódu:")
-
                         rychlosti = [v for v in bezpecnostni_varovani if "rychlost" in v]
                         prejezdy = [v for v in bezpecnostni_varovani if "přejezd" in v]
                         uhly = [v for v in bezpecnostni_varovani if "změna směru" in v]
 
                         if rychlosti:
-                            st.markdown("**🚀 Problémy s rychlostí posuvu (F):**")
+                            st.markdown("**🚀 Rychlost posuvu (F):**")
                             for r in rychlosti: st.write(r)
-
                         if prejezdy:
                             st.markdown("**🚧 Rizikové přejezdy (G0):**")
                             for p in prejezdy: st.write(p)
-
                         if uhly:
-                            st.markdown("**📉 Ostré změny směru (úhly):**")
+                            st.markdown("**📉 Ostré úhly / změny směru:**")
                             for u in uhly: st.write(u)
                 else:
                     st.success("🚀 Žádná rizika nebyla detekována.")
 
             st.write("")
 
-            # Rámeček pro chat a konzultaci
+            # RÁMEČEK: Konzultace s AI (Chatbot)
             with st.container(border=True):
                 st.subheader("💬 Konzultace s AI")
 
-                # Inicializace zpráv
+                # Inicializace zpráv a základního systémového promptu
                 if "messages" not in st.session_state:
                     system_prompt = f"Jsi CNC asistent. Vycházej věcně z této analýzy: {st.session_state.get('ai_popis', '')}"
                     st.session_state.messages = [{"role": "system", "content": system_prompt}]
 
-                # Vykreslení historie chatu
+                # Vykreslení historie chatu z session_state
                 chat_container = st.container(height=350)
                 with chat_container:
                     for m in st.session_state.messages:
@@ -233,30 +230,8 @@ if uploaded_file is not None:
                             with st.chat_message(m["role"]):
                                 st.markdown(m["content"])
 
-                # --- PŘEDPŘIPRAVENÉ OTÁZKY (FAQ TLAČÍTKA) ---
-                st.write("💡 **Časté dotazy (kliknutím odešlete):**")
-                faq_col1, faq_col2, faq_col3 = st.columns(3)
-                zvolena_otazka = None
-
-                with faq_col1:
-                    if st.button("⏱️ Jak zkrátit čas výroby?"):
-                        zvolena_otazka = "Jaké úpravy v tomto G-codu by pomohly zkrátit celkový čas výroby bez ztráty kvality?"
-
-                with faq_col2:
-                    if st.button("⚠️ Detekuješ kritické chyby?"):
-                        zvolena_otazka = "Jsou v tomto G-codu nějaká vyloženě kritická místa, kde hrozí kolize nebo zlomení nástroje?"
-
-                with faq_col3:
-                    if st.button("📈 Optimalizace posuvů?"):
-                        zvolena_otazka = "Podívej se na rychlosti posuvů (F). Jsou nastavené optimálně pro tento typ dráhy?"
-
-                # Zpracování vstupu
-                chat_prompt = st.chat_input("Zeptejte se na detaily součástky...")
-
-                if zvolena_otazka:
-                    chat_prompt = zvolena_otazka
-
-                if chat_prompt:
+                # Zpracování nového vstupu od uživatele
+                if chat_prompt := st.chat_input("Zeptejte se na detaily součástky..."):
                     st.session_state.messages.append({"role": "user", "content": chat_prompt})
                     with chat_container:
                         with st.chat_message("user"):
@@ -276,7 +251,7 @@ if uploaded_file is not None:
                                     response = f"⚠️ Nepodařilo se získat odpověď z Azure OpenAI: {e}"
                                     st.error(response)
 
-                        st.session_state.messages.append({"role": "assistant", "content": response})
-                        st.rerun()
+                    st.session_state.messages.append({"role": "assistant", "content": response})
+                    st.rerun()
 else:
     st.warning("V souboru nebyly nalezeny žádné platné pohyby.")
