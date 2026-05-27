@@ -8,6 +8,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
 from io import BytesIO
+import concurrent.futures  # Nová knihovna pro paralelní běh
 
 # 1. Nastavení vzhledu stránky
 st.set_page_config(page_title="AI G-code asistent", layout="wide", page_icon="🛠️")
@@ -78,6 +79,47 @@ def parse_gcode_to_dataframe(file_content):
     return df, lines, total_time_minutes, warnings
 
 
+# --- POMOCNÉ FUNKCE PRO PARALELNÍ VOLÁNÍ ---
+def generuj_text(vzorek_kodu):
+    prompt = (
+        "Jsi odborný asistent a expert na CNC frézování a 3D tisk. "
+        "Tvým úkolem je analyzovat poskytnutý vzorek G-codu.\n\n"
+        "STRIKTNÍ PRAVIDLO: Neříkej, co kód NENÍ.\n"
+        "1. Hned v první větě přímo věcně pojmenuj technologii, o které se jedná.\n"
+        "2. Popiš, jak bude hotový produkt podle těchto drah přibližně vypadat (tvar, geometrie).\n"
+        "3. Stručně vysvětli, co přesně stroj v tomto výseku dělá a jaké příkazy používá.\n\n"
+        f"G-CODE VZOREK, a bude to mít maximálně třicet slov:\n{vzorek_kodu}"
+    )
+    try:
+        comp = client.chat.completions.create(
+            model=DEPLOYMENT_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=60.0
+        )
+        if hasattr(comp, 'choices') and len(comp.choices) > 0:
+            return comp.choices[0].message.content or "⚠️ Model vrátil prázdnou odpověď."
+        return "⚠️ Nepodařilo se přečíst strukturu odpovědi z Azure."
+    except Exception as e:
+        return f"❌ Došlo k chybě při komunikaci s AI: {e}"
+
+
+def generuj_obrazek(vzorek_kodu):
+    try:
+        base_path = f'openai/deployments/{IMAGE_DEPLOYMENT_NAME}/images'
+        gen_url = f"https://budwise-brigadnici-resource.cognitiveservices.azure.com/{base_path}/generations?api-version={API_VERSION}"
+
+        body = {
+            "prompt": f"Realistic technical engineering isometric visualization of CNC toolpaths for this G-code:\n{vzorek_kodu}",
+            "n": 1, "size": "1024x1024", "quality": "medium", "output_format": "png"
+        }
+
+        resp = requests.post(gen_url, headers={'Api-Key': API_KEY, 'Content-Type': 'application/json'},
+                             json=body).json()
+        return resp['data'][0]['b64_json']
+    except Exception as e:
+        return f"CHYBA: {e}"
+
+
 # 4. UI Rozhraní
 uploaded_file = st.file_uploader("Nahraj svůj G-code soubor", type=["gcode", "nc", "txt"])
 
@@ -101,6 +143,25 @@ if uploaded_file is not None:
         else:
             vzorek_kodu = "\n".join(ciste_radky)
 
+        # PARALELNÍ SPOUŠTĚNÍ (Zde se děje to kouzlo)
+        # Spustí se pouze v případě, že data ještě nemáme v session_state
+        if "ai_popis" not in st.session_state or "generated_img_base64" not in st.session_state:
+            with st.spinner("AI analyzuje váš G-code a generuje odpověď"):
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    # Spustíme obě úlohy naráz na pozadí
+                    budouci_text = executor.submit(generuj_text, vzorek_kodu)
+                    budouci_foto = executor.submit(generuj_obrazek, vzorek_kodu)
+
+                    # Počkáme, až obě doběhnou
+                    st.session_state["ai_popis"] = budouci_text.result()
+
+                    foto_vysledek = budouci_foto.result()
+                    if foto_vysledek.startswith("CHYBA:"):
+                        st.error(foto_vysledek)
+                    else:
+                        st.session_state["generated_img_base64"] = foto_vysledek
+
+        # Od této chvíle je vizuální rozložení přesně takové, jaké jsi měla
         col1, col2 = st.columns([3, 2])
 
         # --- LEVÝ SLOUPCE: Statistiky, Tabulka a OBRÁZEK ---
@@ -129,24 +190,6 @@ if uploaded_file is not None:
             # RÁMEČEK: Vizualizace drah
             with st.container(border=True):
                 st.subheader("🖼️ AI Vizualizace drah")
-                if "generated_img_base64" not in st.session_state:
-                    with st.spinner("Generuji vizualizační model součástky..."):
-                        try:
-                            base_path = f'openai/deployments/{IMAGE_DEPLOYMENT_NAME}/images'
-                            gen_url = f"https://budwise-brigadnici-resource.cognitiveservices.azure.com/{base_path}/generations?api-version={API_VERSION}"
-
-                            body = {
-                                "prompt": f"Realistic technical engineering isometric visualization of CNC toolpaths for this G-code:\n{vzorek_kodu}",
-                                "n": 1, "size": "1024x1024", "quality": "medium", "output_format": "png"
-                            }
-
-                            resp = requests.post(gen_url,
-                                                 headers={'Api-Key': API_KEY, 'Content-Type': 'application/json'},
-                                                 json=body).json()
-                            st.session_state["generated_img_base64"] = resp['data'][0]['b64_json']
-                        except Exception as e:
-                            st.error(f"Chyba při generování obrázku: {e}")
-
                 if "generated_img_base64" in st.session_state:
                     img_bytes = base64.b64decode(st.session_state["generated_img_base64"])
                     st.image(img_bytes, caption="Předpokládaný tvar na základě G-codu", use_container_width=True)
@@ -156,36 +199,6 @@ if uploaded_file is not None:
             # RÁMEČEK: AI Popis + Rozbalovací Rizika
             with st.container(border=True):
                 st.subheader("🤖 AI popis")
-                if "ai_popis" not in st.session_state or st.session_state["ai_popis"] == "":
-                    with st.spinner("Studuji kód..."):
-                        prompt = (
-                            "Jsi odborný asistent a expert na CNC frézování a 3D tisk. "
-                            "Tvým úkolem je analyzovat poskytnutý vzorek G-codu.\n\n"
-                            "STRIKTNÍ PRAVIDLO: Neříkej, co kód NENÍ.\n"
-                            "1. Hned v první větě přímo věcně pojmenuj technologii, o kterou se jedná.\n"
-                            "2. Popiš, jak bude hotový produkt podle těchto drah přibližně vypadat (tvar, geometrie).\n"
-                            "3. Stručně vysvětli, co přesně stroj v tomto výseku dělá a jaké příkazy používá.\n\n"
-                            f"G-CODE VZOREK, a bude to mít maximálně třicet slov:\n{vzorek_kodu}"
-                        )
-                        try:
-                            comp = client.chat.completions.create(
-                                model=DEPLOYMENT_NAME,
-                                messages=[{"role": "user", "content": prompt}],
-                                timeout=60.0
-                            )
-
-                            if hasattr(comp, 'choices') and len(comp.choices) > 0:
-                                odpoved_text = comp.choices[0].message.content
-                                if odpoved_text:
-                                    st.session_state["ai_popis"] = odpoved_text
-                                else:
-                                    st.session_state["ai_popis"] = "⚠️ Model vrátil prázdnou odpověď."
-                            else:
-                                st.session_state["ai_popis"] = "⚠️ Nepodařilo se přečíst strukturu odpovědi z Azure."
-
-                        except Exception as e:
-                            st.session_state["ai_popis"] = f"❌ Došlo k chybě při komunikaci s AI: {e}"
-
                 st.info(st.session_state.get("ai_popis", "⚠️ Žádný popis k zobrazení."))
 
                 st.write("")
